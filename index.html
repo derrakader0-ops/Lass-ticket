@@ -1,1 +1,140 @@
 
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LASS TICKET - Contrôle</title>
+<style>
+body{font-family:Arial;background:#101114;color:white;padding:18px;margin:0}
+main{max-width:480px;margin:auto;background:#202124;padding:20px;border-radius:15px}
+h2{text-align:center;color:#f4c430}
+video{width:100%;background:black;border-radius:10px}
+input,button{box-sizing:border-box;width:100%;padding:14px;margin:9px 0;border:0;border-radius:8px;font-size:16px}
+button{background:#f4c430;font-weight:bold}
+#status{padding:12px;text-align:center;color:#ddd}
+</style>
+</head>
+<body>
+<main>
+<h2>LASS TICKET</h2>
+<p>Contrôle officiel des billets</p>
+
+<video id="video" autoplay playsinline></video>
+<button id="start">Démarrer la caméra</button>
+
+<label>Identifiant du billet</label>
+<input id="ticket" placeholder="LT-...">
+
+<label>Code secret de l'agent</label>
+<input id="pin" type="password" autocomplete="off" placeholder="Code secret">
+
+<button id="check">VÉRIFIER LE BILLET</button>
+<div id="status">En attente d'un billet...</div>
+</main>
+
+<script>
+const SERVER = "https://script.google.com/macros/s/AKfycbyAtgwZBsnKZytotSYEiLvTIy_wcpMYv-t5nr7KSzlikD7zo4boga5lWKCeree765kGPg/exec";
+
+const video = document.getElementById("video");
+const ticket = document.getElementById("ticket");
+const statusBox = document.getElementById("status");
+let stream = null;
+let detector = null;
+let scanning = false;
+
+function status(message){
+  statusBox.textContent = message;
+}
+
+async function startCamera(){
+  try{
+    if(!("BarcodeDetector" in window)){
+      status("Scanner QR non pris en charge. Saisissez le code manuellement.");
+      return;
+    }
+
+    detector = new BarcodeDetector({formats:["qr_code"]});
+    stream = await navigator.mediaDevices.getUserMedia({
+      video:{facingMode:"environment"}
+    });
+
+    video.srcObject = stream;
+    await video.play();
+    scanning = true;
+    status("Caméra active. Présentez un billet.");
+    scanLoop();
+  }catch(error){
+    status("Caméra indisponible : autorisez son accès dans Chrome.");
+  }
+}
+
+async function scanLoop(){
+  if(!scanning || !stream) return;
+
+  try{
+    const codes = await detector.detect(video);
+    if(codes.length && codes[0].rawValue){
+      ticket.value = codes[0].rawValue.trim();
+      status("Billet détecté. Appuyez sur VÉRIFIER.");
+      scanning = false;
+      return;
+    }
+  }catch(error){}
+
+  if(scanning) requestAnimationFrame(scanLoop);
+}
+
+function stopCamera(){
+  scanning = false;
+  if(stream){
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+}
+
+function verifyTicket(){
+  const code = ticket.value.trim();
+  const pin = document.getElementById("pin").value;
+
+  if(!code || !pin){
+    status("Saisissez le billet et le code secret.");
+    return;
+  }
+
+  if(!/^LT-[A-F0-9]{16}$/i.test(code)){
+    status("Format du billet incorrect.");
+    return;
+  }
+
+  stopCamera();
+  status("Transmission du contrôle...");
+
+  const form = document.createElement("form");
+  form.method = "POST";
+  form.action = SERVER;
+  form.target = "_blank";
+
+  const fields = {ticketId:code, pin:pin};
+
+  for(const key in fields){
+    const input = document.createElement("input");
+    input.type = "hidden";
+    input.name = key;
+    input.value = fields[key];
+    form.appendChild(input);
+  }
+
+  document.body.appendChild(form);
+  form.submit();
+  form.remove();
+
+  status("Résultat ouvert dans un nouvel onglet. Revenez ici pour le billet suivant.");
+}
+
+document.getElementById("start").addEventListener("click",startCamera);
+document.getElementById("check").addEventListener("click",verifyTicket);
+</script>
+</body>
+</html>
+
